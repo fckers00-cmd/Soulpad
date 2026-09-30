@@ -27,6 +27,7 @@
 - ทำแล้ว: `makeBass` (triangle + sine sub → lowpass 420 Hz, attack 25 ms) บน `bassBus` แยก ไม่ผ่าน reverb · `bassMidi` = root ใน 36–47 ลงอีก octave ถ้าชนโน้ตต่ำสุดของคอร์ด · step เก็บ `bass` · MIDI track 4 BASS ch2 · session v2
 - ตัดสินเพิ่มระหว่างทำ: **MIDI ส่ง track BASS เมื่อมี step ที่มี bass** (ไม่ผูกกับ `S.bass` ตอน export — ไม่งั้นไฟล์ไม่ตรงกับที่ได้ยิน) · SEQ เล่น bass ตามที่ step เก็บไว้ `S.bass` มีผลกับ pad + step ที่ใส่ใหม่เท่านั้น · step ที่มี bass มี `B` มุมซ้ายล่าง
 - แก้บั๊กเดิม: คอร์ดราก Cb (เช่น IV ของ Gb major) เคยต่ำกว่าคอร์ดอื่นหนึ่ง octave (Tonal "Cb2" = B1) → วางรากตาม pitch class แล้ว
+- แก้บั๊กเดิม (ต้นเหตุเสียงแตกที่ผู้ใช้ได้ยิน): live voice ถูกลบออกจาก `voices` หลัง 10s โดยไม่ stop → Latch/กดค้างเกิน 10s เสียงค้างถาวร ■ หยุดไม่ได้ · วัดแล้ว 6 คอร์ด = 49 oscillator ค้าง → หลังแก้คงที่ 9
 - ⚠️ **headroom (วัดด้วย OfflineAudioContext):** คอร์ดเดี่ยว spread peak 0.95–0.98 อยู่แล้ว ใส่ bass แล้ว peak 1.08–1.17 (clip) · ลด bass เหลือ 0.25 ก็ยัง 1.10 → ต้นเหตุคือ mix ไม่มี headroom ไม่ใช่ bass · ตั้ง `BASS.level` 0.35 ไว้ก่อน · ทางแก้ที่เสนอ: limiter (DynamicsCompressor) ก่อน destination — รอผู้ใช้ตัดสิน
 - ปุ่มเปิด/ปิด `S.bass` ใน CHORD tab เล่น root ของคอร์ดต่ำๆ (ประมาณ MIDI 36–47 ใต้โน้ตต่ำสุดของคอร์ด) ทั้งตอนกด pad และใน SEQ
 - เสียงเบส synth แยก (เช่น sine/triangle + lowpass, attack นุ่ม) ไม่ต้องใช้ FM Rhodes

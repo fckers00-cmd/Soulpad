@@ -25,6 +25,7 @@ Neo soul / R&B music sketchpad บนเบราว์เซอร์ จด id
 - live voice: `noteOn(id,freq,vel)` / `noteOff(id)` / `allOff()`, MAXPOLY 8
 - seq voice: `scheduleVoice(freq, vel, t0, tEnd)` self-terminating
 - ทุก voice ต้อง disconnect tremolo ใน `carrier.onended` (กัน leak)
+- live voice อยู่ใน `voices` จนกว่า `noteOff` เท่านั้น **ห้ามลบออกจาก Map ด้วย timer** (เคยมี timeout 10s → chord ที่ค้างเกิน 10s ดังค้างตลอดไป ■ ก็หยุดไม่ได้ ซ้อนกันจนแตก/กิน CPU)
 - pitched voice ใช้ **linearRamp** เท่านั้น (exponential ไป 0 = crash); กลองใช้ exp ไป 0.001 ได้
 
 **Bass:** `makeBass(freq, vel, t0, tEnd?)` triangle + sine → lowpass ออก `bassBus` (dry, ไม่ผ่าน reverb) · คืน `{mod, carrier, env}` รูปเดียวกับ FM voice เลยใช้ noteOff / fadeSeqNodes ได้เลย · live `bassOn(id, midi)` id = `c<pad>_b` · seq `scheduleBass` · params ใน `BASS` · ⚠️ `stop()` ต้องเรียกหลัง `start()` (Chrome throw)

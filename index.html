@@ -616,8 +616,7 @@ function bassOn(id, midi, vel=0.8) {
   if (voices.size >= MAXPOLY) noteOff([...voices.keys()][0]);
   const v = makeBass(midiFreq(midi), vel, actx.currentTime + 0.012);
   v.dead = false;
-  voices.set(id, v);
-  setTimeout(() => { if (voices.get(id) === v) voices.delete(id); }, 10000);
+  voices.set(id, v);   // stays tracked until noteOff — dropping it early leaves it ringing forever
 }
 
 function midiFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
@@ -666,8 +665,7 @@ function noteOn(id, freq, vel=0.75) {
   mod.start(t); carrier.start(t);
 
   const v = { mod, carrier, env, dead: false };
-  voices.set(id, v);
-  setTimeout(() => { if (voices.get(id) === v) voices.delete(id); }, 10000);
+  voices.set(id, v);   // stays tracked until noteOff — dropping it early leaves it ringing forever
 }
 
 function noteOff(id) {
