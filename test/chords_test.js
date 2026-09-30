@@ -1,6 +1,7 @@
-// Phase 1a — chord extensions. Run: node test/chords_test.js
+// Phase 1a/1b — chord extensions + bass root. Run: node test/chords_test.js
 // Boots every <script> block of index.html against a stub DOM, then checks
-// all modes × degrees × ext levels against the rules in PLAN.md.
+// all modes × degrees × ext levels against the rules in PLAN.md,
+// the bass note under every chord, MIDI export, and session v1 → v2.
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
@@ -111,6 +112,12 @@ for (const key of KEYS) for (const mode of MODES) {
         const t = `${tag} ${v} oct${oct}`;
         ok(m.length >= 2, `${t}: ${m.length} notes`);
         ok(m.length <= 7, `${t}: ${m.length} notes leaves room for bass under MAXPOLY 8`);
+        const b = run(`bassMidi(buildScaleChord(${JSON.stringify(notes)}, ${deg}, ${ext}), ${JSON.stringify(m)})`);
+        ok(m.length + 1 <= run('MAXPOLY'), `${t}: chord + bass ${m.length + 1} > MAXPOLY`);
+        ok(Number.isInteger(b) && b >= 24 && b <= 47, `${t}: bass ${b} outside 24–47`);
+        ok(b < Math.min(...m), `${t}: bass ${b} not under chord low ${Math.min(...m)}`);
+        ok((b - run(`Tonal.Note.midi(${JSON.stringify(ch.root + '4')})`)) % 12 === 0, `${t}: bass ${b} is not the root ${ch.root}`);
+        if (Math.min(...m) > 47) ok(b >= 36, `${t}: bass ${b} dropped below 36 without need`);
         ok(m.every(x => Number.isInteger(x) && x >= 21 && x <= 108), `${t}: out of piano range ${m}`);
         ok(new Set(m).size === m.length, `${t}: duplicate note ${m}`);
         const pcs = new Set(m.map(x => ((x - m[0]) % 12 + 12) % 12));
@@ -141,15 +148,79 @@ run(`assignChord(getDiatonicChords()[0]); S.ext = 13; buildChords();`);
 const step = run('chordSeq[3]');
 ok(step.chordName === 'Cm9' && step.midis.length === 5, `step keeps Cm9 midis, got ${step.chordName} ${step.midis}`);
 
-// ── session: v1 save without ext loads as 7 ──
+// ── SEQ step freezes bass with the chord ──
+run(`S.key='C'; S.mode='dorian'; S.ext=9; S.bass=true; S.voicing='close'; S.chordOct=3; pickStep=5; assignChord(getDiatonicChords()[3]);`);
+const fb = run('chordSeq[5]');
+ok(fb.chordName === 'F9' && fb.bass === 41, `F9 step gets bass F2 (41), got ${fb.chordName} ${fb.bass}`);
+run(`S.bass=false; pickStep=6; assignChord(getDiatonicChords()[5]);`);
+ok(run('chordSeq[6]').bass === null, 'bass off → step has no bass');
+run(`pickStep=7; S.bass=true; S.voicing='rootless'; assignChord(getDiatonicChords()[3]); S.voicing='close';`);
+ok(run('chordSeq[7]').bass === 41, 'rootless F9 still gets F bass');
+
+// ── MIDI export: parse it back ──
+function parseMidi(bytes) {
+  let p = 0;
+  const u32 = () => (bytes[p++] << 24 | bytes[p++] << 16 | bytes[p++] << 8 | bytes[p++]) >>> 0;
+  const u16 = () => bytes[p++] << 8 | bytes[p++];
+  const tag = () => String.fromCharCode(bytes[p++], bytes[p++], bytes[p++], bytes[p++]);
+  if (tag() !== 'MThd' || u32() !== 6) throw new Error('bad header');
+  const fmt = u16(), ntrks = u16(); u16();
+  const tracks = [];
+  for (let k = 0; k < ntrks; k++) {
+    if (tag() !== 'MTrk') throw new Error('bad track ' + k);
+    const end = u32() + p; const tr = { name: '', notes: [], open: 0, bad: 0, ch: new Set() };
+    let tick = 0; const held = {};
+    while (p < end) {
+      let v = 0, c; do { c = bytes[p++]; v = (v << 7) | (c & 0x7f); } while (c & 0x80);
+      tick += v; const st = bytes[p++];
+      if (st === 0xff) { const ty = bytes[p++], len = bytes[p++]; const data = bytes.slice(p, p + len); p += len;
+        if (ty === 0x03) tr.name = String.fromCharCode(...data); continue; }
+      const hi = st & 0xf0, note = bytes[p++], vel = bytes[p++]; tr.ch.add(st & 0x0f);
+      if (hi === 0x90 && vel > 0) { held[note] = (held[note] || 0) + 1; tr.notes.push({ tick, note }); }
+      else if (hi === 0x80 || hi === 0x90) { if (!held[note]) tr.bad++; else held[note]--; }
+      else throw new Error('unexpected status ' + st.toString(16));
+    }
+    if (p !== end) throw new Error('track length mismatch');
+    tr.open = Object.values(held).reduce((a, b) => a + b, 0);
+    tracks.push(tr);
+  }
+  return { fmt, tracks };
+}
+let saved = null;
+ctx.saveFile = b => { saved = b; };
+run('exportMidi();');
+let mid = parseMidi(saved);
+ok(mid.fmt === 1 && mid.tracks.length === 4, `4 tracks with bass steps, got ${mid.tracks.length}`);
+const bt = mid.tracks[3];
+ok(bt && bt.name === 'BASS', `track 4 named BASS, got ${bt && bt.name}`);
+ok(bt && bt.ch.size === 1 && bt.ch.has(1), 'BASS on channel 2');
+ok(bt && bt.notes.length === 2 && bt.notes.every(x => x.note === 41), `bass notes = 2× F2, got ${bt && JSON.stringify(bt.notes)}`);
+mid.tracks.forEach(t => ok(t.open === 0 && t.bad === 0, `${t.name}: on/off unpaired (open ${t.open}, stray off ${t.bad})`));
+run('chordSeq = chordSeq.map(s => s && { ...s, bass: null }); exportMidi();');
+mid = parseMidi(saved);
+ok(mid.tracks.length === 3, `no bass steps → 3 tracks, got ${mid.tracks.length}`);
+
+// ── session: v1 → v2 ──
+Object.keys(store).forEach(k => delete store[k]);
+const v1step = { root: 'C', chordName: 'Cm7', quality: 'm7', roman: 'I', midis: [48, 51, 55, 58], len: 2 };
 store.soulpad_session_v1 = JSON.stringify({ S: { key: 'D', mode: 'ionian' }, SD: 0.03,
-  chordSeq: Array(32).fill(null), melSeq: Array(32).fill(null),
+  chordSeq: [v1step, ...Array(31).fill(null)], melSeq: Array(32).fill(null),
   drumSeq: { kick: Array(32).fill(false), snare: Array(32).fill(false), hat: Array(32).fill(false) } });
-run(`S.ext = 11; delete S.ext; loadSession();`);
-ok(run('S.ext') === 7, `old save loads ext 7, got ${run('S.ext')}`);
-store.soulpad_session_v1 = JSON.stringify({ S: { ext: 5 } });
+run(`S.ext = 11; S.bass = true; delete S.ext; delete S.bass; loadSession();`);
+ok(run('S.ext') === 7, `v1 loads ext 7, got ${run('S.ext')}`);
+ok(run('S.bass') === false, 'v1 loads bass off');
+ok(run('S.key') === 'D', 'v1 keeps key');
+const m0 = run('chordSeq[0]');
+ok(m0 && m0.chordName === 'Cm7' && m0.len === 2 && m0.bass === null && m0.midis.length === 4, `v1 step migrates, got ${JSON.stringify(m0)}`);
+run('saveSession();');
+ok(store.soulpad_session_v2 && JSON.parse(store.soulpad_session_v2).S.bass === false, 'saves under v2 key');
+ok(JSON.parse(store.soulpad_session_v1).S.key === 'D', 'v1 left untouched');
+store.soulpad_session_v2 = JSON.stringify({ S: { ext: 5, bass: 'yes' } });
 run('loadSession();');
-ok(run('S.ext') === 7, 'bad ext falls back to 7');
+ok(run('S.ext') === 7 && run('S.bass') === false, 'bad ext/bass fall back to 7 / off');
+store.soulpad_session_v2 = '{broken';
+run('loadSession();');
+ok(true, 'corrupt v2 does not throw');
 
 console.log(`${n} chords checked`);
 if (fails) { console.log(`${fails} failure(s)`); process.exit(1); }

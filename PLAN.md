@@ -7,7 +7,7 @@
 ### 1a. Extension 7 / 9 / 11 / 13 — ✅ build + เทสต์แล้ว (รอผู้ใช้ฟังบน Android)
 - ทำแล้ว: `buildScaleChord()` / `chordToMidis(ch, …)` สร้างจาก semitone (`ivs`) ไม่ผ่าน Tonal.Chord · `test/chords_test.js` 3528 คอร์ดผ่าน
 - ตัดสินเพิ่มระหว่างทำ: ไม่มี 9 (เช่น b9 ถูกข้าม) → ใส่วงเล็บ `Cm7(11)` · shell = 3 + 7 + tension บนสุด · บรรทัดเล็กใต้ชื่อบน pad = chord tones (`1 b3 b7 9`)
-- session: เพิ่มแค่ `S.ext` (default 7) ยังใช้ key v1 — bump v2 รอบเดียวตอนทำ 1b เพราะ step ได้ field `bass`
+- session: `S.ext` (default 7) — ขึ้น v2 พร้อม 1b แล้ว
 
 ปัญหาเดิม: คอร์ดมีแค่ 7th (ได้ Cm7 ไม่ได้ Cm9) และ rootless ของ Cm7 เหลือ Eb-G-Bb = Eb triad เสียผิดวัตถุประสงค์
 
@@ -23,14 +23,18 @@
 - voicing เดิมทั้ง 5 แบบต้องใช้กับคอร์ดยาวได้ (drop2 / spread / shell / rootless)
 - SEQ เก็บ `midis` + `chordName` ตอนกดใส่ step → เปลี่ยน ext ทีหลังไม่กระทบ step เก่า
 
-### 1b. Bass root ⬅ ถัดไป
+### 1b. Bass root — ✅ build + เทสต์แล้ว (รอผู้ใช้ฟังบน Android)
+- ทำแล้ว: `makeBass` (triangle + sine sub → lowpass 420 Hz, attack 25 ms) บน `bassBus` แยก ไม่ผ่าน reverb · `bassMidi` = root ใน 36–47 ลงอีก octave ถ้าชนโน้ตต่ำสุดของคอร์ด · step เก็บ `bass` · MIDI track 4 BASS ch2 · session v2
+- ตัดสินเพิ่มระหว่างทำ: **MIDI ส่ง track BASS เมื่อมี step ที่มี bass** (ไม่ผูกกับ `S.bass` ตอน export — ไม่งั้นไฟล์ไม่ตรงกับที่ได้ยิน) · SEQ เล่น bass ตามที่ step เก็บไว้ `S.bass` มีผลกับ pad + step ที่ใส่ใหม่เท่านั้น · step ที่มี bass มี `B` มุมซ้ายล่าง
+- แก้บั๊กเดิม: คอร์ดราก Cb (เช่น IV ของ Gb major) เคยต่ำกว่าคอร์ดอื่นหนึ่ง octave (Tonal "Cb2" = B1) → วางรากตาม pitch class แล้ว
+- ⚠️ **headroom (วัดด้วย OfflineAudioContext):** คอร์ดเดี่ยว spread peak 0.95–0.98 อยู่แล้ว ใส่ bass แล้ว peak 1.08–1.17 (clip) · ลด bass เหลือ 0.25 ก็ยัง 1.10 → ต้นเหตุคือ mix ไม่มี headroom ไม่ใช่ bass · ตั้ง `BASS.level` 0.35 ไว้ก่อน · ทางแก้ที่เสนอ: limiter (DynamicsCompressor) ก่อน destination — รอผู้ใช้ตัดสิน
 - ปุ่มเปิด/ปิด `S.bass` ใน CHORD tab เล่น root ของคอร์ดต่ำๆ (ประมาณ MIDI 36–47 ใต้โน้ตต่ำสุดของคอร์ด) ทั้งตอนกด pad และใน SEQ
 - เสียงเบส synth แยก (เช่น sine/triangle + lowpass, attack นุ่ม) ไม่ต้องใช้ FM Rhodes
 - เก็บโน้ตเบสใน chord step ตอนกดใส่ (`bass: midi`) ความยาวตาม `len` ของคอร์ด
 - **MIDI: เพิ่ม track 4 "BASS" แยก (ch2)** ← ผู้ใช้ตัดสินแล้ว ส่งออกเมื่อ `S.bass` เปิด
 
-### Session
-- data เปลี่ยน → key ใหม่ `soulpad_session_v2` + migrate จาก v1 (step เก่าไม่มี ext/bass ให้ถือเป็น 7 / ไม่มีเบส)
+### Session — ✅
+- data เปลี่ยน → key ใหม่ `soulpad_session_v2` + migrate จาก v1 (step เก่าไม่มี ext/bass ให้ถือเป็น 7 / ไม่มีเบส) · v1 อ่านอย่างเดียว ไม่ลบ ไม่เขียนทับ
 
 ### เทสต์ก่อน commit (ด้วย node)
 - ทุก mode (9) × ทุกดีกรี (7) × ทุก ext (4): ไม่มี b9/b13, ไม่มี 11 natural บน maj/dom, 5th ถูกตัดตามกติกา, ชื่อคอร์ดถูก

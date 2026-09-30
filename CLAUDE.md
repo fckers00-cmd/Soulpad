@@ -27,6 +27,8 @@ Neo soul / R&B music sketchpad บนเบราว์เซอร์ จด id
 - ทุก voice ต้อง disconnect tremolo ใน `carrier.onended` (กัน leak)
 - pitched voice ใช้ **linearRamp** เท่านั้น (exponential ไป 0 = crash); กลองใช้ exp ไป 0.001 ได้
 
+**Bass:** `makeBass(freq, vel, t0, tEnd?)` triangle + sine → lowpass ออก `bassBus` (dry, ไม่ผ่าน reverb) · คืน `{mod, carrier, env}` รูปเดียวกับ FM voice เลยใช้ noteOff / fadeSeqNodes ได้เลย · live `bassOn(id, midi)` id = `c<pad>_b` · seq `scheduleBass` · params ใน `BASS` · ⚠️ `stop()` ต้องเรียกหลัง `start()` (Chrome throw)
+
 **Drums:** kick/snare/hat synth ล้วน ผ่าน `drumBus` (dry ไม่ผ่าน reverb), noise buffer สร้างครั้งเดียวใน `bootAudio`
 
 **Scheduler (custom):** lookahead 0.1s, poll 25ms, schedule บน `actx.currentTime`
@@ -34,10 +36,10 @@ Neo soul / R&B music sketchpad บนเบราว์เซอร์ จด id
 
 **State**
 ```js
-const S = { key, mode, ext, voicing, playMode, chordOct, melOct, bpm, subdiv, swing }   // ext = 7|9|11|13
+const S = { key, mode, ext, bass, voicing, playMode, chordOct, melOct, bpm, subdiv, swing }   // ext = 7|9|11|13
 let SD                          // strum delay (s)
 const STEPS = 32, PAGE = 16     // 16 CALL + 16 RESPOND
-let chordSeq = Array(32)        // {root, chordName, quality, roman, ivs, midis, len} | null  (step ที่ถูก tie คลุม = null)
+let chordSeq = Array(32)        // {root, chordName, quality, roman, ivs, midis, bass, len} | null  (bass = midi | null)  (step ที่ถูก tie คลุม = null)
 let melSeq   = Array(32)        // {midi, pc, oct, len} | null
 let drumSeq  = { kick: bool[32], snare: bool[32], hat: bool[32] }
 ```
@@ -48,9 +50,9 @@ let drumSeq  = { kick: bool[32], snare: bool[32], hat: bool[32] }
 
 **Modes (9):** dorian, aeolian, melodic minor, ionian, lydian, lydian dominant, mixolydian, phrygian, dorian b2
 
-**MIDI export:** Type-1, 3 track (CHORD ch1, MELODY ch1, DRUMS ch10 GM 36/38/42), download ด้วย anchor ที่ append เข้า DOM + `application/octet-stream` (อย่าใช้ Web Share)
+**MIDI export:** Type-1, 3 track (CHORD ch1, MELODY ch1, DRUMS ch10 GM 36/38/42) + track 4 BASS ch2 เมื่อมี step ที่มี bass, download ด้วย anchor ที่ append เข้า DOM + `application/octet-stream` (อย่าใช้ Web Share)
 
-**Session:** localStorage `soulpad_session_v1`, `autosave()` debounce 400ms, `syncUI()` จับคู่ปุ่มผ่าน `data-val`, guard ปฏิเสธ data ที่ length ไม่ตรง STEPS
+**Session:** localStorage `soulpad_session_v2` (อ่าน `v1` เป็น fallback แล้ว migrate), `autosave()` debounce 400ms, `syncUI()` จับคู่ปุ่มผ่าน `data-val`, guard ปฏิเสธ data ที่ length ไม่ตรง STEPS
 ถ้าเปลี่ยนรูป data → ขึ้น key เวอร์ชันใหม่ + migrate ของเก่า ห้ามทำให้ session ผู้ใช้พัง
 
 ## วิธีทำงาน
@@ -58,7 +60,8 @@ let drumSeq  = { kick: bool[32], snare: bool[32], hat: bool[32] }
 - **ประเมินก่อน build** ถ้ามีหลายทาง เสนอ tradeoff ให้เลือกก่อนลงมือ
 - build ทีละ feature แก้เฉพาะจุด ไม่ rewrite ทั้งไฟล์
 - **ก่อน commit ต้อง validate ด้วย node:** script ทุกบล็อก parse ผ่าน + เทสต์ logic ใหม่ด้วย script (เช่น ทุก mode × ทุกตัวเลือก)
-  `node test/chords_test.js` ต้องขึ้น `=== all passed ===` (boot ทุก script บล็อกกับ DOM ปลอม + เช็คคอร์ดทุก key × mode × ดีกรี × ext × voicing)
+  `node test/chords_test.js` ต้องขึ้น `=== all passed ===` (boot ทุก script บล็อกกับ DOM ปลอม + เช็คคอร์ด/bass ทุก key × mode × ดีกรี × ext × voicing × octave, parse MIDI กลับ, migrate v1→v2)
+  DOM ปลอมไม่มี Web Audio — เรื่องเสียง (error ตอน schedule, peak/clip) ต้องเช็คใน Chromium ด้วย OfflineAudioContext (playwright-core, `/opt/pw-browsers`)
 - debug หา root cause ไม่ patch วน
 - ผู้ใช้เทสต์จริงใน Chrome / PWA บน Android (webview ในแอป Claude บล็อก download และ localStorage ใช้เทสต์ไม่ได้)
 - commit ขึ้น `main` แล้ว GitHub Pages deploy เอง, sw.js เป็น network-first ไม่ต้อง bump cache

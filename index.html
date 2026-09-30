@@ -252,6 +252,7 @@ input[type=range]::-webkit-slider-thumb {
 .step.tied .sl { font-size: 13px; color: var(--amber-dim); }
 .step.tied .sx { opacity: 0; }
 /* length badge on a note head */
+.step .sbass { position: absolute; bottom: 2px; left: 4px; font-size: 7px; color: var(--amber-dim); }
 .step .slen { position: absolute; bottom: 2px; right: 4px; font-size: 8px; font-weight: bold; color: var(--amber); }
 .step.cur { border-color: var(--green); background: var(--green-bg); color: var(--green); }
 .seq-hint { font-size: 10px; color: var(--muted); text-align: center; flex-shrink: 0; }
@@ -379,6 +380,11 @@ input[type=range]::-webkit-slider-thumb {
         <button class="sb" data-val="11" onclick="setExt(11,this)">11</button>
         <button class="sb" data-val="13" onclick="setExt(13,this)">13</button>
       </div>
+      <span class="lbl" style="margin-left:auto">Bass</span>
+      <div class="seg" id="bseg">
+        <button class="sb on" data-val="false" onclick="setBass(false,this)">Off</button>
+        <button class="sb" data-val="true" onclick="setBass(true,this)">On</button>
+      </div>
     </div>
     <div class="row">
       <span class="lbl">Voicing</span>
@@ -496,6 +502,7 @@ input[type=range]::-webkit-slider-thumb {
 let actx, master, rvbDelay, rvbFb, rvbWet;
 let tremOsc, tremGain;        // shared tremolo LFO (1 osc for all voices)
 let noiseBuffer, drumBus;     // shared noise source + dry drum bus
+let bassBus;                  // dry bass bus (bypass reverb — keeps the low end tight)
 let audioUp = false;
 const voices = new Map();
 const MAXPOLY = 8;
@@ -525,6 +532,9 @@ async function bootAudio() {
   drumBus = actx.createGain(); drumBus.gain.value = 0.9;
   drumBus.connect(actx.destination);
 
+  bassBus = actx.createGain(); bassBus.gain.value = BASS.level;
+  bassBus.connect(actx.destination);
+
   // Shared white-noise buffer for snare/hat (created once, reused)
   noiseBuffer = actx.createBuffer(1, Math.floor(actx.sampleRate * 0.5), actx.sampleRate);
   const nd = noiseBuffer.getChannelData(0);
@@ -540,6 +550,74 @@ async function bootAudio() {
   tremOsc.start();
 
   audioUp = true;
+}
+
+// Bass voice params (tunable) — triangle + sine sub, lowpass, soft attack. No FM.
+const BASS = {
+  level: 0.35,     // bassBus gain — chord alone already peaks ~0.95, see PLAN.md 1b
+  attack: 0.025,   // soft attack (s) — no click
+  decay: 0.9,      // settle to sustain (s)
+  sustain: 0.7,    // fraction of peak held
+  filterHz: 420,   // lowpass: keeps the triangle round
+  sineMix: 0.6,    // sine under the triangle for weight
+};
+
+// Build one bass voice starting at t0. Same shape as an FM voice ({mod, carrier, env})
+// so noteOff / fadeSeqNodes / allOff handle it unchanged.
+// tEnd = null → live (hold at sustain until noteOff) · number → full envelope ending at tEnd.
+function makeBass(freq, vel, t0, tEnd=null) {
+  const carrier = actx.createOscillator();   // triangle = the tone
+  carrier.type = 'triangle'; carrier.frequency.value = freq;
+  const mod = actx.createOscillator();       // sine = the weight (named mod for the shared stop path)
+  mod.type = 'sine'; mod.frequency.value = freq;
+  const sineG = actx.createGain(); sineG.gain.value = BASS.sineMix;
+
+  const env = actx.createGain();
+  const peak = vel * 0.5, sus = peak * BASS.sustain;
+  env.gain.setValueAtTime(0, t0);
+  if (tEnd == null) {
+    env.gain.linearRampToValueAtTime(peak, t0 + BASS.attack);
+    env.gain.linearRampToValueAtTime(sus, t0 + BASS.attack + BASS.decay);
+  } else {
+    // every event stays in time order even on very short steps (no ramp after the release)
+    const aEnd = Math.min(t0 + BASS.attack, tEnd - 0.02);
+    env.gain.linearRampToValueAtTime(peak, aEnd);
+    const dEnd = Math.min(aEnd + BASS.decay, tEnd - 0.03);
+    if (dEnd > aEnd + 0.01) {
+      env.gain.linearRampToValueAtTime(sus, dEnd);
+      env.gain.setValueAtTime(sus, Math.max(tEnd - 0.08, dEnd));
+    }
+    env.gain.linearRampToValueAtTime(0.0001, tEnd);   // release (linear, never exp)
+  }
+
+  const filt = actx.createBiquadFilter();
+  filt.type = 'lowpass'; filt.frequency.value = BASS.filterHz; filt.Q.value = 0.5;
+
+  carrier.connect(env); mod.connect(sineG); sineG.connect(env);
+  env.connect(filt); filt.connect(bassBus);
+  carrier.start(t0); mod.start(t0);
+  if (tEnd != null) { carrier.stop(tEnd + 0.1); mod.stop(tEnd + 0.1); }   // stop only after start
+  return { mod, carrier, env };
+}
+
+// Bass note under a chord: the chord root in MIDI 36–47, pushed down an octave
+// if that would sit on or above the chord's lowest note (Low octave, drop2).
+function bassMidi(ch, midis) {
+  const pc = Tonal.Note.chroma(ch.root);
+  let m = 36 + ((pc - 36 % 12) + 12) % 12;
+  const low = Math.min(...midis);
+  while (m >= low && m - 12 >= 24) m -= 12;
+  return m;
+}
+
+function bassOn(id, midi, vel=0.8) {
+  if (!actx) return;
+  noteOff(id);
+  if (voices.size >= MAXPOLY) noteOff([...voices.keys()][0]);
+  const v = makeBass(midiFreq(midi), vel, actx.currentTime + 0.012);
+  v.dead = false;
+  voices.set(id, v);
+  setTimeout(() => { if (voices.get(id) === v) voices.delete(id); }, 10000);
 }
 
 function midiFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
@@ -625,7 +703,7 @@ function killAll(btn) {
 // ═══════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════
-const S = { key:'C', mode:'dorian', ext:7, voicing:'close', playMode:'touch', chordOct:3, melOct:4, bpm:90, subdiv:'8n', swing:0 };
+const S = { key:'C', mode:'dorian', ext:7, bass:false, voicing:'close', playMode:'touch', chordOct:3, melOct:4, bpm:90, subdiv:'8n', swing:0 };
 
 // Step resolution map (tpb=480): MIDI ticks per step + beat fraction
 const SUBDIV = {
@@ -741,8 +819,10 @@ function getDiatonicChords() {
 
 // ch = chord from buildScaleChord (needs .root + .ivs)
 function chordToMidis(ch, voicing, octBase=3) {
-  const base = Tonal.Note.midi(ch.root + octBase);
-  if (base == null || !ch.ivs || !ch.ivs.length) return [];
+  // root by pitch class, so Cb sits with B and B# with C (Tonal's "Cb2" is B1 — an octave low)
+  const pc = Tonal.Note.chroma(ch.root);
+  if (pc == null || Number.isNaN(pc) || !ch.ivs || !ch.ivs.length) return [];
+  const base = 12 * (octBase + 1) + pc;
 
   // close = stacked 3rds; tensions (9/11/13) sit in the octave above
   let midis = ch.ivs.map(iv => base + iv).sort((a,b)=>a-b);
@@ -823,6 +903,7 @@ function buildChords() {
 
       if (S.playMode === 'touch') {
         strum(midis, 'c'+idx);
+        if (S.bass) bassOn('c'+idx+'_b', bassMidi(ch, midis));
         document.querySelectorAll('.cp').forEach(p=>p.classList.remove('lit'));
         pad.classList.add('lit');
         // enable release only after strum finishes
@@ -843,6 +924,7 @@ function buildChords() {
           allOff();
           if (latchPad) latchPad.classList.remove('lit');
           strum(midis, 'c'+idx);
+          if (S.bass) bassOn('c'+idx+'_b', bassMidi(ch, midis));
           pad.classList.add('lit');
           latchPad = pad;
         }
@@ -851,6 +933,7 @@ function buildChords() {
 
     const doRelease = () => {
       getMidis().forEach((_,i) => noteOff('c'+idx+'_'+i));
+      noteOff('c'+idx+'_b');
       pad.classList.remove('lit');
     };
 
@@ -980,7 +1063,8 @@ function buildStep(track, i, label) {
   s.id = track + 'step' + i;
 
   const len = data ? (data.len || 1) : 1;
-  const badge = (data && len > 1) ? `<span class="slen">×${len}</span>` : '';
+  const badge = ((data && len > 1) ? `<span class="slen">×${len}</span>` : '')
+              + ((data && data.bass != null) ? '<span class="sbass">B</span>' : '');
   const mid = data ? label : (tied ? '►' : '—');
   s.innerHTML = `<span class="sn">${i+1}</span><span class="sl">${mid}</span>${badge}<span class="sx">×</span>`;
 
@@ -1120,7 +1204,8 @@ function buildNotePicker() {
 function assignChord(ch) {
   if (pickStep === null) return;
   const midis = chordToMidis(ch, S.voicing, S.chordOct);
-  chordSeq[pickStep] = { ...ch, midis, len: 1 };
+  const bass = S.bass ? bassMidi(ch, midis) : null;   // frozen with the step, like midis
+  chordSeq[pickStep] = { ...ch, midis, bass, len: 1 };
   closePicker(); buildSeq();
 }
 
@@ -1182,6 +1267,13 @@ function scheduleVoice(freq, vel, t0, tEnd){
   seqNodes.push({ mod, carrier, env, end: tEnd + 0.1 });
 }
 
+// Scheduled bass voice (self-terminating, same release shape as scheduleVoice)
+function scheduleBass(freq, t0, tEnd){
+  if (!actx) return;
+  const v = makeBass(freq, 0.8, t0, tEnd);
+  seqNodes.push({ mod: v.mod, carrier: v.carrier, env: v.env, end: tEnd + 0.1 });
+}
+
 // ── Synth drum voices (Web Audio only, no samples) ──
 function drumKick(t){
   const o = actx.createOscillator(), g = actx.createGain();
@@ -1231,6 +1323,7 @@ function scheduleStep(step, t){
       const vel = 0.5 + (i / cd.midis.length) * 0.3;
       scheduleVoice(midiFreq(midi), vel, t + strum, tEnd);
     });
+    if (cd.bass != null) scheduleBass(midiFreq(cd.bass), t, tEnd);
   }
   const md = melSeq[step];
   if (md) scheduleVoice(midiFreq(md.midi), 0.7, t, t + md.len * dur);
@@ -1419,16 +1512,29 @@ function exportMidi(){
     });
   });
 
+  // ── Bass track events ── (ch2, same span as its chord; only steps that were assigned with bass)
+  const bassEvents = [];
+  chordSeq.forEach((d, i) => {
+    if (d && d.bass != null) {
+      const on = i * stepTicks + swingTk(i), off = on + (d.len || 1) * stepTicks - gap;
+      bassEvents.push({tick: on,  on: true,  note: d.bass, vel: 90});
+      bassEvents.push({tick: off, on: false, note: d.bass, vel: 0});
+    }
+  });
+
   // tempo meta lives at the head of track 1 (chord)
   const tempo = [0x00, 0xff, 0x51, 0x03, (mpb>>16)&255, (mpb>>8)&255, mpb&255];
   const t1 = buildTrack(chordEvents, 'CHORD', tempo);
   const t2 = buildTrack(melEvents,  'MELODY');
   const t3 = buildTrack(drumEvents, 'DRUMS', [], 9);   // channel 10 (index 9) = GM drums
+  // track 4 only when some step carries bass — the file matches what plays
+  const tracks = [t1, t2, t3];
+  if (bassEvents.length) tracks.push(buildTrack(bassEvents, 'BASS', [], 1));   // channel 2
 
-  // Type-1 header: format=1, ntrks=3
-  const hdr = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0,3, (tpb>>8)&255, tpb&255];
+  // Type-1 header: format=1
+  const hdr = [0x4d,0x54,0x68,0x64, 0,0,0,6, 0,1, 0,tracks.length, (tpb>>8)&255, tpb&255];
 
-  const bytes = new Uint8Array([...hdr, ...t1, ...t2, ...t3]);
+  const bytes = new Uint8Array([...hdr, ...tracks.flat()]);
   // sanitize filename: C# → Cs, "dorian b2" → dorianb2
   const tag = `${S.key}_${S.mode}`.replace(/#/g,'s').replace(/\s+/g,'');
   saveFile(bytes, `soulpad_${tag}.mid`);
@@ -1464,6 +1570,7 @@ function showTab(name,el){
   document.getElementById('panel-'+name).classList.add('on');
 }
 function setExt(n,btn){ S.ext=n; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); buildChords(); }
+function setBass(on,btn){ S.bass=on; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); autosave(); }
 function setV(v,btn){ S.voicing=v; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); buildChords(); }
 function setPM(m,btn){ S.playMode=m; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); killAll(); autosave(); }
 function setMelOct(o,btn){ S.melOct=o; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); buildMelody(); }
@@ -1498,7 +1605,8 @@ function onKeyMode(){
 // ═══════════════════════════════════════════════
 // SESSION SAVE/LOAD (localStorage — works in real Chrome + PWA)
 // ═══════════════════════════════════════════════
-const SESSION_KEY = 'soulpad_session_v1';
+const SESSION_KEY = 'soulpad_session_v2';   // v2: S.ext, S.bass, chord step .bass
+const SESSION_KEY_V1 = 'soulpad_session_v1'; // read once for migration, never written
 let saveTimer = null;
 
 function saveSession(){
@@ -1510,14 +1618,18 @@ function autosave(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveSession
 
 function loadSession(){
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    let raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) raw = localStorage.getItem(SESSION_KEY_V1);   // v1 → v2: same shape, fields added below
     if (!raw) return;
     const d = JSON.parse(raw);
     if (d.S) Object.assign(S, d.S);
     if (!EXTS.includes(S.ext)) S.ext = 7;   // v1 saves predate extensions
+    S.bass = S.bass === true;               // v1 saves predate bass
     if (typeof d.SD === 'number') SD = d.SD;
     // only accept sequences that match current length (guards old 16-step saves)
-    if (Array.isArray(d.chordSeq) && d.chordSeq.length === STEPS) chordSeq = d.chordSeq;
+    if (Array.isArray(d.chordSeq) && d.chordSeq.length === STEPS) {
+      chordSeq = d.chordSeq.map(st => st ? { ...st, bass: Number.isInteger(st.bass) ? st.bass : null } : null);
+    }
     if (Array.isArray(d.melSeq)   && d.melSeq.length   === STEPS) melSeq   = d.melSeq;
     if (d.drumSeq && d.drumSeq.kick && d.drumSeq.kick.length === STEPS) drumSeq = d.drumSeq;
   } catch(e) { /* corrupt or unavailable — start fresh */ }
@@ -1553,6 +1665,7 @@ function syncUI(){
   document.getElementById('keyS').value  = S.key;
   document.getElementById('modeS').value = S.mode;
   syncSeg('eseg', S.ext);
+  syncSeg('bseg', S.bass);
   syncSeg('vseg', S.voicing);
   syncSeg('pseg', S.playMode);
   syncSeg('coseg', S.chordOct);
