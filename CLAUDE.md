@@ -22,6 +22,7 @@ Neo soul / R&B music sketchpad บนเบราว์เซอร์ จด id
 **Audio engine — FM Rhodes**
 - sine modulator → carrier (modEnv ขับ `carrier.frequency`), amp env, lowpass, shared tremolo LFO 1 ตัว
 - params ใน object `FM`; reverb = feedback delay (rvbDelay/rvbFb/rvbWet)
+- **output:** ทุก bus (master, rvbWet, drumBus, bassBus) → `limiter` → `limOut` → destination · ห้าม connect ตรงเข้า `actx.destination` · ค่าใน `LIM` (วัดแล้ว ดู PLAN.md 1b) · Chrome DynamicsCompressor ใส่ make-up gain เอง → `LIM.trim` หักคืน ถ้าเปลี่ยน threshold ต้องวัด trim ใหม่
 - live voice: `noteOn(id,freq,vel)` / `noteOff(id)` / `allOff()`, MAXPOLY 8
 - seq voice: `scheduleVoice(freq, vel, t0, tEnd)` self-terminating
 - ทุก voice ต้อง disconnect tremolo ใน `carrier.onended` (กัน leak)

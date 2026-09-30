@@ -28,7 +28,9 @@
 - ตัดสินเพิ่มระหว่างทำ: **MIDI ส่ง track BASS เมื่อมี step ที่มี bass** (ไม่ผูกกับ `S.bass` ตอน export — ไม่งั้นไฟล์ไม่ตรงกับที่ได้ยิน) · SEQ เล่น bass ตามที่ step เก็บไว้ `S.bass` มีผลกับ pad + step ที่ใส่ใหม่เท่านั้น · step ที่มี bass มี `B` มุมซ้ายล่าง
 - แก้บั๊กเดิม: คอร์ดราก Cb (เช่น IV ของ Gb major) เคยต่ำกว่าคอร์ดอื่นหนึ่ง octave (Tonal "Cb2" = B1) → วางรากตาม pitch class แล้ว
 - แก้บั๊กเดิม (ต้นเหตุเสียงแตกที่ผู้ใช้ได้ยิน): live voice ถูกลบออกจาก `voices` หลัง 10s โดยไม่ stop → Latch/กดค้างเกิน 10s เสียงค้างถาวร ■ หยุดไม่ได้ · วัดแล้ว 6 คอร์ด = 49 oscillator ค้าง → หลังแก้คงที่ 9
-- ⚠️ **headroom (วัดด้วย OfflineAudioContext):** คอร์ดเดี่ยว spread peak 0.95–0.98 อยู่แล้ว ใส่ bass แล้ว peak 1.08–1.17 (clip) · ลด bass เหลือ 0.25 ก็ยัง 1.10 → ต้นเหตุคือ mix ไม่มี headroom ไม่ใช่ bass · ตั้ง `BASS.level` 0.35 ไว้ก่อน · ทางแก้ที่เสนอ: limiter (DynamicsCompressor) ก่อน destination — รอผู้ใช้ตัดสิน
+- **Limiter (ผู้ใช้ตกลงแล้ว):** ทุก bus → `limiter` (DynamicsCompressor, threshold −1 dB, ratio 20, attack 1 ms, release 120 ms) → `limOut` (trim 0.946 หักล้าง make-up gain +0.48 dB ที่ Chrome ใส่เอง) · ปิดได้ด้วย `LIM.on = false`
+  - วัดก่อนใส่ (loop 8 bar มีกลอง, **รวมตอนไม่มี bass**): peak 1.43–1.51, clip 339–767 sample · หลังใส่: peak 0.97–0.98, clip 0 · ความดังเปลี่ยน −0.03 ถึง −0.25 dB
+  - ต้นเหตุ clip หลักคือ kick (drumBus ตรงลำโพง) + คอร์ด ไม่ใช่ melody (peak 0.27) · threshold −6 dB เคยลอง: บีบคอร์ดที่ไม่ได้ clip และ make-up +3.3 dB — อย่าใช้
 - ปุ่มเปิด/ปิด `S.bass` ใน CHORD tab เล่น root ของคอร์ดต่ำๆ (ประมาณ MIDI 36–47 ใต้โน้ตต่ำสุดของคอร์ด) ทั้งตอนกด pad และใน SEQ
 - เสียงเบส synth แยก (เช่น sine/triangle + lowpass, attack นุ่ม) ไม่ต้องใช้ FM Rhodes
 - เก็บโน้ตเบสใน chord step ตอนกดใส่ (`bass: midi`) ความยาวตาม `len` ของคอร์ด

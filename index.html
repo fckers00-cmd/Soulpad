@@ -503,6 +503,7 @@ let actx, master, rvbDelay, rvbFb, rvbWet;
 let tremOsc, tremGain;        // shared tremolo LFO (1 osc for all voices)
 let noiseBuffer, drumBus;     // shared noise source + dry drum bus
 let bassBus;                  // dry bass bus (bypass reverb — keeps the low end tight)
+let limiter, limOut;          // every bus → limiter → limOut → speakers
 let audioUp = false;
 const voices = new Map();
 const MAXPOLY = 8;
@@ -517,23 +518,35 @@ const FM = {
   filterHz: 3200,  // warmth lowpass
 };
 
+// Output limiter — only acts on peaks near full scale (kick + chord, full mix).
+// DynamicsCompressor adds its own make-up gain; LIM.trim takes it back out so
+// quiet playing comes out at the same level as with no limiter.
+const LIM = { on: true, threshold: -1, knee: 0, ratio: 20, attack: 0.001, release: 0.12, trim: 0.946 };   // trim = −0.48 dB, measured
+
 async function bootAudio() {
   if (audioUp) return;
   actx = new (window.AudioContext || window.webkitAudioContext)();
+  limOut = actx.createGain(); limOut.connect(actx.destination);
+  limiter = actx.createDynamicsCompressor();
+  limiter.threshold.value = LIM.threshold; limiter.knee.value = LIM.knee; limiter.ratio.value = LIM.ratio;
+  limiter.attack.value = LIM.attack; limiter.release.value = LIM.release;
+  limiter.connect(limOut);
+  const out = LIM.on ? limiter : limOut;   // LIM.on = false → bypass (A/B by ear)
+  limOut.gain.value = LIM.on ? LIM.trim : 1;
   master = actx.createGain(); master.gain.value = 0.55;
   rvbDelay = actx.createDelay(0.6); rvbDelay.delayTime.value = 0.2;
   rvbFb = actx.createGain(); rvbFb.gain.value = 0.42;
   rvbWet = actx.createGain(); rvbWet.gain.value = 0.2;
   rvbDelay.connect(rvbFb); rvbFb.connect(rvbDelay);
-  rvbDelay.connect(rvbWet); rvbWet.connect(actx.destination);
-  master.connect(actx.destination); master.connect(rvbDelay);
+  rvbDelay.connect(rvbWet); rvbWet.connect(out);
+  master.connect(out); master.connect(rvbDelay);
 
   // Drums on a dry bus (bypass reverb) for punch
   drumBus = actx.createGain(); drumBus.gain.value = 0.9;
-  drumBus.connect(actx.destination);
+  drumBus.connect(out);
 
   bassBus = actx.createGain(); bassBus.gain.value = BASS.level;
-  bassBus.connect(actx.destination);
+  bassBus.connect(out);
 
   // Shared white-noise buffer for snare/hat (created once, reused)
   noiseBuffer = actx.createBuffer(1, Math.floor(actx.sampleRate * 0.5), actx.sampleRate);
