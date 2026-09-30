@@ -4,7 +4,11 @@
 
 ## Phase 1 — เสียงคอร์ด ⬅ ทำต่อจากตรงนี้
 
-### 1a. Extension 7 / 9 / 11 / 13
+### 1a. Extension 7 / 9 / 11 / 13 — ✅ build + เทสต์แล้ว (รอผู้ใช้ฟังบน Android)
+- ทำแล้ว: `buildScaleChord()` / `chordToMidis(ch, …)` สร้างจาก semitone (`ivs`) ไม่ผ่าน Tonal.Chord · `test/chords_test.js` 3528 คอร์ดผ่าน
+- ตัดสินเพิ่มระหว่างทำ: ไม่มี 9 (เช่น b9 ถูกข้าม) → ใส่วงเล็บ `Cm7(11)` · shell = 3 + 7 + tension บนสุด · บรรทัดเล็กใต้ชื่อบน pad = chord tones (`1 b3 b7 9`)
+- session: เพิ่มแค่ `S.ext` (default 7) ยังใช้ key v1 — bump v2 รอบเดียวตอนทำ 1b เพราะ step ได้ field `bass`
+
 ปัญหาเดิม: คอร์ดมีแค่ 7th (ได้ Cm7 ไม่ได้ Cm9) และ rootless ของ Cm7 เหลือ Eb-G-Bb = Eb triad เสียผิดวัตถุประสงค์
 
 - ปุ่มแถวเดียวใน CHORD tab `7 · 9 · 11 · 13` เก็บใน `S.ext` (ปุ่มมี `data-val`, ผูก syncUI + autosave)
@@ -19,7 +23,7 @@
 - voicing เดิมทั้ง 5 แบบต้องใช้กับคอร์ดยาวได้ (drop2 / spread / shell / rootless)
 - SEQ เก็บ `midis` + `chordName` ตอนกดใส่ step → เปลี่ยน ext ทีหลังไม่กระทบ step เก่า
 
-### 1b. Bass root
+### 1b. Bass root ⬅ ถัดไป
 - ปุ่มเปิด/ปิด `S.bass` ใน CHORD tab เล่น root ของคอร์ดต่ำๆ (ประมาณ MIDI 36–47 ใต้โน้ตต่ำสุดของคอร์ด) ทั้งตอนกด pad และใน SEQ
 - เสียงเบส synth แยก (เช่น sine/triangle + lowpass, attack นุ่ม) ไม่ต้องใช้ FM Rhodes
 - เก็บโน้ตเบสใน chord step ตอนกดใส่ (`bass: midi`) ความยาวตาม `len` ของคอร์ด

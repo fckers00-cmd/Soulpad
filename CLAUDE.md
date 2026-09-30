@@ -34,15 +34,17 @@ Neo soul / R&B music sketchpad บนเบราว์เซอร์ จด id
 
 **State**
 ```js
-const S = { key, mode, voicing, playMode, chordOct, melOct, bpm, subdiv, swing }
+const S = { key, mode, ext, voicing, playMode, chordOct, melOct, bpm, subdiv, swing }   // ext = 7|9|11|13
 let SD                          // strum delay (s)
 const STEPS = 32, PAGE = 16     // 16 CALL + 16 RESPOND
-let chordSeq = Array(32)        // {chordName, midis, len} | null  (step ที่ถูก tie คลุม = null)
+let chordSeq = Array(32)        // {root, chordName, quality, roman, ivs, midis, len} | null  (step ที่ถูก tie คลุม = null)
 let melSeq   = Array(32)        // {midi, pc, oct, len} | null
 let drumSeq  = { kick: bool[32], snare: bool[32], hat: bool[32] }
 ```
 
-**Tabs:** CHORD (7 diatonic pads, voicing close/drop2/spread/shell/rootless, Touch/Latch, strum, octave) · MELODY (6×4 fourths grid) · SEQ (32 step, CALL/RESPOND page, note length ×1/×2/×4 แบบ TB-303 tie, resolution 1/4·1/8·1/16, swing, drums, CLR two-tap, MIDI export)
+**Chords:** `buildScaleChord(notes, deg, ext)` สร้างคอร์ดจาก scale เป็น `ivs` (semitone เหนือ root) + ตั้งชื่อเอง (ไม่ใช้ Tonal.Chord.detect/get แล้ว) · `chordToMidis(ch, voicing, oct)` รับ object คอร์ด ไม่ใช่ชื่อ · กติกา extension ดู PLAN.md 1a
+
+**Tabs:** CHORD (7 diatonic pads, ext 7/9/11/13, voicing close/drop2/spread/shell/rootless, Touch/Latch, strum, octave) · MELODY (6×4 fourths grid) · SEQ (32 step, CALL/RESPOND page, note length ×1/×2/×4 แบบ TB-303 tie, resolution 1/4·1/8·1/16, swing, drums, CLR two-tap, MIDI export)
 
 **Modes (9):** dorian, aeolian, melodic minor, ionian, lydian, lydian dominant, mixolydian, phrygian, dorian b2
 
@@ -56,6 +58,7 @@ let drumSeq  = { kick: bool[32], snare: bool[32], hat: bool[32] }
 - **ประเมินก่อน build** ถ้ามีหลายทาง เสนอ tradeoff ให้เลือกก่อนลงมือ
 - build ทีละ feature แก้เฉพาะจุด ไม่ rewrite ทั้งไฟล์
 - **ก่อน commit ต้อง validate ด้วย node:** script ทุกบล็อก parse ผ่าน + เทสต์ logic ใหม่ด้วย script (เช่น ทุก mode × ทุกตัวเลือก)
+  `node test/chords_test.js` ต้องขึ้น `=== all passed ===` (boot ทุก script บล็อกกับ DOM ปลอม + เช็คคอร์ดทุก key × mode × ดีกรี × ext × voicing)
 - debug หา root cause ไม่ patch วน
 - ผู้ใช้เทสต์จริงใน Chrome / PWA บน Android (webview ในแอป Claude บล็อก download และ localStorage ใช้เทสต์ไม่ได้)
 - commit ขึ้น `main` แล้ว GitHub Pages deploy เอง, sw.js เป็น network-first ไม่ต้อง bump cache

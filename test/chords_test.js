@@ -1,0 +1,156 @@
+// Phase 1a — chord extensions. Run: node test/chords_test.js
+// Boots every <script> block of index.html against a stub DOM, then checks
+// all modes × degrees × ext levels against the rules in PLAN.md.
+const fs = require('fs'), path = require('path'), vm = require('vm');
+const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+
+let fails = 0;
+const ok = (cond, msg) => { if (!cond) { fails++; console.log('FAIL', msg); } };
+
+// ── stub DOM: enough for boot + buildChords/openPicker ──
+function el() {
+  let html = '';
+  return {
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; this.children = []; },
+    textContent: '', value: '', dataset: {}, style: {}, children: [],
+    classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
+    appendChild(c) { this.children.push(c); return c; }, removeChild(){},
+    addEventListener(){}, closest() { return { querySelectorAll: () => [] }; },
+    querySelectorAll: () => [], click(){},
+  };
+}
+const els = {};
+const store = {};
+const ctx = {
+  console, setTimeout: () => 0, clearTimeout(){}, setInterval: () => 0, clearInterval(){},
+  requestAnimationFrame: f => 0, cancelAnimationFrame(){},
+  navigator: {}, location: { protocol: 'file:' }, window: { addEventListener(){} },
+  localStorage: { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); } },
+  document: {
+    getElementById: id => els[id] || (els[id] = el()),
+    createElement: () => el(), querySelectorAll: () => [], body: el(),
+  },
+};
+vm.createContext(ctx);
+blocks.forEach((b, i) => {
+  try { vm.runInContext(b, ctx, { filename: 'script' + i }); }
+  catch (e) { ok(false, `script block ${i} threw: ${e.message}`); }
+});
+if (fails) process.exit(1);
+const run = src => vm.runInContext(src, ctx);
+
+const MODES = ['dorian','aeolian','melodic minor','ionian','lydian','lydian dominant','mixolydian','phrygian','dorian b2'];
+const EXT = [7, 9, 11, 13];
+const VOICINGS = ['close','drop2','spread','shell','rootless'];
+
+// ── named examples from PLAN.md ──
+const name = (key, mode, deg, ext) =>
+  run(`buildScaleChord(Tonal.Scale.get(${JSON.stringify(key + ' ' + mode)}).notes, ${deg}, ${ext})`).chordName;
+[
+  ['C','dorian',0,9,'Cm9'], ['C','lydian',0,11,'Cmaj9#11'], ['C','mixolydian',0,13,'C13'],
+  ['C','ionian',4,13,'G13'], ['C','melodic minor',0,9,'CmMaj9'],
+  // 7 level keeps the old names, but maj7#5 replaces Tonal's "M7b6"
+  ['C','dorian',0,7,'Cm7'], ['C','ionian',0,7,'Cmaj7'], ['C','ionian',6,7,'Bm7b5'],
+  ['C','melodic minor',2,7,'Ebmaj7#5'], ['C','melodic minor',0,7,'CmMaj7'],
+  // other spellings the plan lists
+  ['C','dorian',0,11,'Cm11'], ['C','dorian',0,13,'Cm13'], ['C','ionian',0,9,'Cmaj9'],
+  ['C','ionian',0,13,'Cmaj13'], ['C','mixolydian',0,9,'C9'], ['C','lydian dominant',0,11,'C9#11'],
+  ['C','melodic minor',5,11,'Am11b5'],
+  // b9 skipped → no 9 in the name
+  ['C','phrygian',0,9,'Cm7'], ['C','phrygian',0,11,'Cm7(11)'],
+].forEach(([k, m, d, e, want]) => {
+  const got = name(k, m, d, e);
+  ok(got === want, `${k} ${m} deg ${d + 1} @${e}: want ${want}, got ${got}`);
+});
+
+// ── rules, every key × mode × degree × ext ──
+const KEYS = ['C','C#','Db','D','Eb','E','F','F#','Gb','G','Ab','A','Bb','B'];
+let n = 0;
+for (const key of KEYS) for (const mode of MODES) {
+  const notes = run(`Tonal.Scale.get(${JSON.stringify(key + ' ' + mode)}).notes`);
+  ok(notes.length === 7, `${key} ${mode}: scale has ${notes.length} notes`);
+  for (let deg = 0; deg < 7; deg++) {
+    let prev = null;
+    for (const ext of EXT) {
+      n++;
+      const ch = run(`buildScaleChord(${JSON.stringify(notes)}, ${deg}, ${ext})`);
+      const tag = `${key} ${mode} deg ${deg + 1} @${ext} (${ch.chordName})`;
+      const iv = ch.ivs, has = s => iv.includes(s);
+      const third = iv[1];
+      const minor = third === 3;
+      const seventh = iv.find(s => s === 10 || s === 11);
+      const dom = third === 4 && seventh === 10;
+      const maj = third === 4 && seventh === 11;
+
+      ok(ch.chordName.startsWith(ch.root), `${tag}: name starts with root`);
+      ok(!ch.quality.startsWith('(0'), `${tag}: quality not recognised`);
+      ok(third === 3 || third === 4, `${tag}: has a 3rd`);
+      ok(seventh !== undefined, `${tag}: has a 7th`);
+      ok(!has(13) && !has(20), `${tag}: no b9 / b13`);
+      if (maj || dom) ok(!has(17), `${tag}: no natural 11 on maj/dom`);
+      if (minor) ok(!has(18), `${tag}: no #11 on minor`);
+      ok(!has(15), `${tag}: no #9`);
+      const tens = iv.filter(s => s > 12);
+      if (ext === 7) ok(tens.length === 0, `${tag}: @7 has no tensions`);
+      if (ext === 9) ok(tens.every(s => s === 14), `${tag}: @9 adds only the 9`);
+      if (ext === 11) ok(!has(21), `${tag}: @11 has no 13`);
+      const eleven13 = has(17) || has(18) || has(21);
+      if (eleven13) ok(!has(7), `${tag}: perfect 5th dropped with 11/13`);
+      else ok(has(6) || has(7) || has(8), `${tag}: 5th kept without 11/13`);
+      if (third === 3 && iv.includes(6)) ok(/b5/.test(ch.chordName), `${tag}: b5 named`);
+      if (iv.includes(8)) ok(/#5/.test(ch.chordName), `${tag}: #5 named`);
+      if (has(18)) ok(/#11/.test(ch.chordName), `${tag}: #11 named`);
+      if (has(14)) ok(/(9|11|13)/.test(ch.chordName.slice(ch.root.length)), `${tag}: 9 named`);
+      // cumulative: a higher ext never loses a tension a lower one had
+      if (prev) prev.filter(s => s > 12).forEach(s => ok(has(s), `${tag}: keeps ${s} from lower ext`));
+      prev = iv;
+
+      for (const oct of [2, 3, 4]) for (const v of VOICINGS) {
+        const m = run(`chordToMidis(buildScaleChord(${JSON.stringify(notes)}, ${deg}, ${ext}), ${JSON.stringify(v)}, ${oct})`);
+        const t = `${tag} ${v} oct${oct}`;
+        ok(m.length >= 2, `${t}: ${m.length} notes`);
+        ok(m.length <= 7, `${t}: ${m.length} notes leaves room for bass under MAXPOLY 8`);
+        ok(m.every(x => Number.isInteger(x) && x >= 21 && x <= 108), `${t}: out of piano range ${m}`);
+        ok(new Set(m).size === m.length, `${t}: duplicate note ${m}`);
+        const pcs = new Set(m.map(x => ((x - m[0]) % 12 + 12) % 12));
+        const want = new Set(iv.map(s => s % 12));
+        if (v === 'close' || v === 'drop2' || v === 'spread')
+          ok(pcs.size === want.size, `${t}: lost a chord tone`);
+        if (v === 'shell' && tens.length)
+          ok(m.length === 3, `${t}: shell = 3rd + 7th + top tension`);
+        if (v === 'rootless' && ext === 9 && has(14))
+          ok(m.length === 4, `${t}: rootless 9 = 3 5 7 9`);
+      }
+    }
+  }
+}
+
+// ── UI wiring: pads + picker use the current ext ──
+run(`S.key='C'; S.mode='dorian'; S.ext=9; buildChords();`);
+const pads = els.chordGrid.children;
+ok(pads.length === 7, `7 pads built, got ${pads.length}`);
+ok(/Cm9/.test(pads[0].innerHTML), 'pad I shows Cm9 at ext 9');
+ok(/1 b3 5 b7 9/.test(pads[0].innerHTML), 'pad I subtitle shows tones');
+run(`openPicker('chord', 3);`);
+const picks = els.pickerGrid.children;
+ok(picks[0].textContent === 'Cm9', `picker shows Cm9, got ${picks[0].textContent}`);
+
+// ── SEQ keeps what was assigned when ext changes later ──
+run(`assignChord(getDiatonicChords()[0]); S.ext = 13; buildChords();`);
+const step = run('chordSeq[3]');
+ok(step.chordName === 'Cm9' && step.midis.length === 5, `step keeps Cm9 midis, got ${step.chordName} ${step.midis}`);
+
+// ── session: v1 save without ext loads as 7 ──
+store.soulpad_session_v1 = JSON.stringify({ S: { key: 'D', mode: 'ionian' }, SD: 0.03,
+  chordSeq: Array(32).fill(null), melSeq: Array(32).fill(null),
+  drumSeq: { kick: Array(32).fill(false), snare: Array(32).fill(false), hat: Array(32).fill(false) } });
+run(`S.ext = 11; delete S.ext; loadSession();`);
+ok(run('S.ext') === 7, `old save loads ext 7, got ${run('S.ext')}`);
+store.soulpad_session_v1 = JSON.stringify({ S: { ext: 5 } });
+run('loadSession();');
+ok(run('S.ext') === 7, 'bad ext falls back to 7');
+
+console.log(`${n} chords checked`);
+if (fails) { console.log(`${fails} failure(s)`); process.exit(1); }
+console.log('=== all passed ===');

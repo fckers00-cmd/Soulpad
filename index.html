@@ -372,6 +372,15 @@ input[type=range]::-webkit-slider-thumb {
   <!-- CHORD -->
   <div class="panel on" id="panel-chord">
     <div class="row">
+      <span class="lbl">Ext</span>
+      <div class="seg" id="eseg">
+        <button class="sb on" data-val="7" onclick="setExt(7,this)">7</button>
+        <button class="sb" data-val="9" onclick="setExt(9,this)">9</button>
+        <button class="sb" data-val="11" onclick="setExt(11,this)">11</button>
+        <button class="sb" data-val="13" onclick="setExt(13,this)">13</button>
+      </div>
+    </div>
+    <div class="row">
       <span class="lbl">Voicing</span>
       <div class="seg" id="vseg">
         <button class="sb on" data-val="close" onclick="setV('close',this)">Close</button>
@@ -616,7 +625,7 @@ function killAll(btn) {
 // ═══════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════
-const S = { key:'C', mode:'dorian', voicing:'close', playMode:'touch', chordOct:3, melOct:4, bpm:90, subdiv:'8n', swing:0 };
+const S = { key:'C', mode:'dorian', ext:7, voicing:'close', playMode:'touch', chordOct:3, melOct:4, bpm:90, subdiv:'8n', swing:0 };
 
 // Step resolution map (tpb=480): MIDI ticks per step + beat fraction
 const SUBDIV = {
@@ -657,35 +666,86 @@ function getScaleNotes() {
   return sc.notes.length ? sc.notes : ['C','D','E','F','G','A','B'];
 }
 
-function getDiatonicChords() {
-  const notes = getScaleNotes();
-  // Build 7th chords on each degree using Tonal
-  return notes.map((root, deg) => {
-    // Try to detect chord quality from scale degree
-    const sc = Tonal.Scale.get(`${S.key} ${S.mode}`);
-    const intervals = sc.intervals;
-    // Use Tonal.Chord.detect on stacked 3rds
-    const stack = [0, 2, 4, 6].map(i => notes[(deg + i) % 7]);
-    const detected = Tonal.Chord.detect(stack);
-    const chordName = detected[0] || root + 'm7';
-    const parsed = Tonal.Chord.get(chordName);
-    const quality = parsed.aliases[0] || chordName.replace(root,'');
-    const ROMAN = ['I','II','III','IV','V','VI','VII'];
-    return { root, chordName, quality: quality || '7', roman: ROMAN[deg] };
-  });
+// 7th-chord quality from semitones of 3rd / 5th / 7th above the root
+const QUAL = {
+  '4,7,11': 'maj7', '3,7,10': 'm7', '4,7,10': '7', '3,6,10': 'm7b5',
+  '3,7,11': 'mMaj7', '4,8,11': 'maj7#5',
+};
+// headline name per quality for n = 7/9/11/13 (e.g. m7b5 @11 → m11b5)
+const QNAME = {
+  'maj7':   n => 'maj' + n,
+  'm7':     n => 'm' + n,
+  '7':      n => '' + n,
+  'm7b5':   n => 'm' + n + 'b5',
+  'mMaj7':  n => 'mMaj' + n,
+  'maj7#5': n => 'maj' + n + '#5',
+};
+const EXTS = [7, 9, 11, 13];
+// chord-tone labels for the pad subtitle (semitones above root)
+const DEG = { 0:'1', 3:'b3', 4:'3', 6:'b5', 7:'5', 8:'#5', 10:'b7', 11:'7', 14:'9', 17:'11', 18:'#11', 21:'13' };
+
+// Build the chord on scale degree `deg` with extensions up to `ext`.
+// Tensions come from the scale, filtered by chord family:
+//   all: never b9 / b13 · minor: natural 11 only · maj & dom: #11 only
+// 5th is dropped once an 11 or 13 is in, unless it is altered (b5/#5).
+// Returns { root, chordName, quality, roman, ivs } — ivs = semitones above root.
+function buildScaleChord(notes, deg, ext) {
+  const root = notes[deg];
+  const rc = Tonal.Note.chroma(root);
+  const st = k => (Tonal.Note.chroma(notes[(deg + k) % 7]) - rc + 12) % 12;
+  const third = st(2), fifth = st(4), seventh = st(6);
+  const quality = QUAL[third + ',' + fifth + ',' + seventh] || null;
+  const minor = third === 3, dom = third === 4 && seventh === 10;
+
+  const t9 = st(1), t11 = st(3), t13 = st(5);
+  const ok9  = t9 === 2;
+  const ok11 = minor ? t11 === 5 : t11 === 6;
+  const ok13 = t13 === 9;
+  const has9  = ext >= 9  && ok9;
+  const has11 = ext >= 11 && ok11;
+  const has13 = ext >= 13 && ok13;
+
+  const ivs = [0, third];
+  if (!((has11 || has13) && fifth === 7)) ivs.push(fifth);
+  ivs.push(seventh);
+  if (has9)  ivs.push(12 + t9);
+  if (has11) ivs.push(12 + t11);
+  if (has13) ivs.push(12 + t13);
+
+  let suffix;
+  if (!quality) {
+    // outside the known set — spell the stack rather than guess a name
+    suffix = '(' + ivs.join(',') + ')';
+  } else {
+    const nat11 = has11 && t11 === 5, sharp11 = has11 && t11 === 6;
+    let n = 7;
+    if (has9) n = has13 ? 13 : (nat11 ? 11 : 9);
+    suffix = QNAME[quality](n);
+    if (has9) {
+      if (sharp11) suffix += '#11';
+    } else {
+      const adds = [];
+      if (has11) adds.push(sharp11 ? '#11' : '11');
+      if (has13) adds.push('13');
+      if (adds.length) suffix += '(' + adds.join(',') + ')';
+    }
+  }
+  const ROMAN = ['I','II','III','IV','V','VI','VII'];
+  return { root, chordName: root + suffix, quality: suffix, roman: ROMAN[deg], ivs };
 }
 
-function chordToMidis(chordName, voicing, octBase=3) {
-  const ch = Tonal.Chord.get(chordName);
-  if (!ch.tonic || !ch.intervals || !ch.intervals.length) return [];
+function getDiatonicChords() {
+  const notes = getScaleNotes();
+  return notes.map((_, deg) => buildScaleChord(notes, deg, S.ext));
+}
 
-  // Build from intervals above root — each chord gets correct register
-  let midis = ch.intervals.map(iv => {
-    const note = Tonal.transpose(ch.tonic + octBase, iv);
-    return Tonal.Note.midi(note);
-  }).filter(m => m !== null);
+// ch = chord from buildScaleChord (needs .root + .ivs)
+function chordToMidis(ch, voicing, octBase=3) {
+  const base = Tonal.Note.midi(ch.root + octBase);
+  if (base == null || !ch.ivs || !ch.ivs.length) return [];
 
-  midis.sort((a,b)=>a-b);
+  // close = stacked 3rds; tensions (9/11/13) sit in the octave above
+  let midis = ch.ivs.map(iv => base + iv).sort((a,b)=>a-b);
 
   switch(voicing) {
     case 'drop2':
@@ -698,9 +758,14 @@ function chordToMidis(chordName, voicing, octBase=3) {
     case 'rootless':
       midis = midis.slice(1);
       break;
-    case 'shell':
-      midis = midis.length >= 3 ? [midis[1], midis[midis.length-1]] : midis;
+    case 'shell': {
+      // 3rd + 7th, plus the top tension so the extension still reads
+      const tens = ch.ivs.filter(iv => iv > 12);
+      const keep = [ch.ivs[1], ch.ivs[ch.ivs.length - 1 - tens.length]];
+      if (tens.length) keep.push(tens[tens.length - 1]);
+      midis = keep.map(iv => base + iv).sort((a,b)=>a-b);
       break;
+    }
   }
   return midis;
 }
@@ -737,9 +802,9 @@ function buildChords() {
     pad.innerHTML = `
       <div class="roman">${ch.roman}</div>
       <div class="cname">${ch.chordName}</div>
-      <div class="cqual">${ch.quality}</div>
+      <div class="cqual">${ch.ivs.map(iv => DEG[iv] || iv).join(' ')}</div>
     `;
-    const getMidis = () => chordToMidis(ch.chordName, S.voicing, S.chordOct);
+    const getMidis = () => chordToMidis(ch, S.voicing, S.chordOct);
 
     let canRelease = false;
     let releaseQueued = false;
@@ -1054,7 +1119,7 @@ function buildNotePicker() {
 
 function assignChord(ch) {
   if (pickStep === null) return;
-  const midis = chordToMidis(ch.chordName, S.voicing, S.chordOct);
+  const midis = chordToMidis(ch, S.voicing, S.chordOct);
   chordSeq[pickStep] = { ...ch, midis, len: 1 };
   closePicker(); buildSeq();
 }
@@ -1398,6 +1463,7 @@ function showTab(name,el){
   el.classList.add('on');
   document.getElementById('panel-'+name).classList.add('on');
 }
+function setExt(n,btn){ S.ext=n; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); buildChords(); }
 function setV(v,btn){ S.voicing=v; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); buildChords(); }
 function setPM(m,btn){ S.playMode=m; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); killAll(); autosave(); }
 function setMelOct(o,btn){ S.melOct=o; btn.closest('.seg').querySelectorAll('.sb').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); buildMelody(); }
@@ -1448,6 +1514,7 @@ function loadSession(){
     if (!raw) return;
     const d = JSON.parse(raw);
     if (d.S) Object.assign(S, d.S);
+    if (!EXTS.includes(S.ext)) S.ext = 7;   // v1 saves predate extensions
     if (typeof d.SD === 'number') SD = d.SD;
     // only accept sequences that match current length (guards old 16-step saves)
     if (Array.isArray(d.chordSeq) && d.chordSeq.length === STEPS) chordSeq = d.chordSeq;
@@ -1485,6 +1552,7 @@ function syncSeg(id, val){
 function syncUI(){
   document.getElementById('keyS').value  = S.key;
   document.getElementById('modeS').value = S.mode;
+  syncSeg('eseg', S.ext);
   syncSeg('vseg', S.voicing);
   syncSeg('pseg', S.playMode);
   syncSeg('coseg', S.chordOct);
