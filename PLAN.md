@@ -2,9 +2,9 @@
 
 หลักการ: **เสียงก่อน โครงทีหลัง** ทุก pattern/เพลงในอนาคตใช้คอร์ดชุดนี้ ถ้าทำ song mode ก่อนต้องย้าย data สองรอบ
 
-## Phase 1 — เสียงคอร์ด ⬅ ทำต่อจากตรงนี้
+## Phase 1 — เสียงคอร์ด ✅ เสร็จ (ผู้ใช้ฟังบน Android แล้ว 30 ก.ย. 2026: เสียงไม่แตก limiter ไม่ทำให้คอร์ดยุบ)
 
-### 1a. Extension 7 / 9 / 11 / 13 — ✅ build + เทสต์แล้ว (รอผู้ใช้ฟังบน Android)
+### 1a. Extension 7 / 9 / 11 / 13 — ✅
 - ทำแล้ว: `buildScaleChord()` / `chordToMidis(ch, …)` สร้างจาก semitone (`ivs`) ไม่ผ่าน Tonal.Chord · `test/chords_test.js` 3528 คอร์ดผ่าน
 - ตัดสินเพิ่มระหว่างทำ: ไม่มี 9 (เช่น b9 ถูกข้าม) → ใส่วงเล็บ `Cm7(11)` · shell = 3 + 7 + tension บนสุด · บรรทัดเล็กใต้ชื่อบน pad = chord tones (`1 b3 b7 9`)
 - session: `S.ext` (default 7) — ขึ้น v2 พร้อม 1b แล้ว
@@ -23,9 +23,10 @@
 - voicing เดิมทั้ง 5 แบบต้องใช้กับคอร์ดยาวได้ (drop2 / spread / shell / rootless)
 - SEQ เก็บ `midis` + `chordName` ตอนกดใส่ step → เปลี่ยน ext ทีหลังไม่กระทบ step เก่า
 
-### 1b. Bass root — ✅ build + เทสต์แล้ว (รอผู้ใช้ฟังบน Android)
+### 1b. Bass root — ✅
 - ทำแล้ว: `makeBass` (triangle + sine sub → lowpass 420 Hz, attack 25 ms) บน `bassBus` แยก ไม่ผ่าน reverb · `bassMidi` = root ใน 36–47 ลงอีก octave ถ้าชนโน้ตต่ำสุดของคอร์ด · step เก็บ `bass` · MIDI track 4 BASS ch2 · session v2
 - ตัดสินเพิ่มระหว่างทำ: **MIDI ส่ง track BASS เมื่อมี step ที่มี bass** (ไม่ผูกกับ `S.bass` ตอน export — ไม่งั้นไฟล์ไม่ตรงกับที่ได้ยิน) · SEQ เล่น bass ตามที่ step เก็บไว้ `S.bass` มีผลกับ pad + step ที่ใส่ใหม่เท่านั้น · step ที่มี bass มี `B` มุมซ้ายล่าง
+- ที่มาของ 1b ที่ผู้ใช้ได้ยิน: "บางคอร์ดเสียงเหมือนกัน" เช่น F9 กับ Am7b5 — ไม่ใช่บั๊ก: 9 chord ตัด root = m7(b5) ที่อยู่สูงกว่าหนึ่ง third (F9 rootless = Am7b5 close โน้ตตรงกันทุกตัว) · วัดแล้วใน voicing เดียวกันไม่มี pad ไหนซ้ำ 100% แต่ต่างกันแค่โน้ตเดียว ~20 คู่ (เกือบทั้งหมดตอน @9) · Spread ไม่มีเลย · bass root คือทางแก้ อย่าไปแก้กติกา extension
 - แก้บั๊กเดิม: คอร์ดราก Cb (เช่น IV ของ Gb major) เคยต่ำกว่าคอร์ดอื่นหนึ่ง octave (Tonal "Cb2" = B1) → วางรากตาม pitch class แล้ว
 - แก้บั๊กเดิม (ต้นเหตุเสียงแตกที่ผู้ใช้ได้ยิน): live voice ถูกลบออกจาก `voices` หลัง 10s โดยไม่ stop → Latch/กดค้างเกิน 10s เสียงค้างถาวร ■ หยุดไม่ได้ · วัดแล้ว 6 คอร์ด = 49 oscillator ค้าง → หลังแก้คงที่ 9
 - **Limiter (ผู้ใช้ตกลงแล้ว):** ทุก bus → `limiter` (DynamicsCompressor, threshold −1 dB, ratio 20, attack 1 ms, release 120 ms) → `limOut` (trim 0.946 หักล้าง make-up gain +0.48 dB ที่ Chrome ใส่เอง) · ปิดได้ด้วย `LIM.on = false`
@@ -46,7 +47,7 @@
 - MIDI 4 track parse ผ่าน, note on/off จับคู่ครบ
 - session v1 → v2 migrate ไม่พัง
 
-## Phase 2 — คำศัพท์คอร์ด (เก็บไว้ ตัดสินหลังผู้ใช้เล่น Phase 1)
+## Phase 2 — คำศัพท์คอร์ด ⬅ ถัดไป (รอผู้ใช้สั่ง — ห้ามเริ่มเอง)
 - pad 8–9 สำหรับคอร์ดนอกคีย์: V7/vi, iv ยืมจาก minor, tritone sub
 - ห้ามเริ่มเองจนกว่าผู้ใช้สั่ง
 
