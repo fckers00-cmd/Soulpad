@@ -1,4 +1,4 @@
-// Phase 1a/1b — chord extensions + bass root. Run: node test/chords_test.js
+// Phase 1a/1b/2 — chord extensions, bass root, out-of-key chords. Run: node test/chords_test.js
 // Boots every <script> block of index.html against a stub DOM, then checks
 // all modes × degrees × ext levels against the rules in PLAN.md,
 // the bass note under every chord, MIDI export, and session v1 → v2.
@@ -133,15 +133,60 @@ for (const key of KEYS) for (const mode of MODES) {
   }
 }
 
+// ── spice (out-of-key) chords: every key × mode × ext ──
+const SPICE_WANT = {   // key C, @7 — the table agreed with the user (PLAN.md Phase 2)
+  'ionian': 'E7 Fm7 Db7', 'lydian': 'E7 Fm7 Db7', 'mixolydian': 'E7 Fm7 Db7', 'lydian dominant': 'E7 Fm7 Db7',
+  'dorian': 'G7 Abmaj7 Db7', 'dorian b2': 'G7 Abmaj7 Db7', 'aeolian': 'G7 F7 Db7', 'phrygian': 'G7 F7 Db7',
+  'melodic minor': 'A7 Abmaj7 Db7',
+};
+for (const mode of MODES) {
+  const got = run(`S.key='C'; S.mode=${JSON.stringify(mode)}; S.ext=7; getSpiceChords().map(c => c.chordName).join(' ')`);
+  ok(got === SPICE_WANT[mode], `C ${mode} spice: want ${SPICE_WANT[mode]}, got ${got}`);
+}
+let ns = 0;
+for (const key of KEYS) for (const mode of MODES) for (const ext of EXT) {
+  const sp = run(`S.key=${JSON.stringify(key)}; S.mode=${JSON.stringify(mode)}; S.ext=${ext}; getSpiceChords()`);
+  const scale = new Set(run(`getScaleNotes().map(n => Tonal.Note.chroma(n))`));
+  const tonic = run(`Tonal.Note.chroma(S.key)`);
+  const diat = run(`getDiatonicChords().map(c => Tonal.Note.chroma(c.root))`);
+  ok(sp.length === 3, `${key} ${mode}: 3 spice chords`);
+  sp.forEach((ch, i) => {
+    ns++;
+    const tag = `${key} ${mode} @${ext} spice ${i + 1} (${ch.chordName})`;
+    const rc = run(`Tonal.Note.chroma(${JSON.stringify(ch.root)})`);
+    ok(ch.spice === true && ch.roman && ch.chordName.startsWith(ch.root), `${tag}: labelled`);
+    ok(!ch.quality.startsWith('(0'), `${tag}: quality recognised`);
+    ok(ch.ivs.some(iv => !scale.has((rc + iv) % 12)), `${tag}: has a note outside the key`);
+    ok(!ch.ivs.includes(13) && !ch.ivs.includes(20), `${tag}: no b9 / b13`);
+    if (i === 2) ok((rc - tonic + 12) % 12 === 1, `${tag}: subV root a semitone above the key`);
+    if (i === 0) {   // secondary dominant: its target (a 4th up) is one of the pads
+      ok(ch.ivs[1] === 4 && ch.ivs.includes(10), `${tag}: is a dominant 7`);
+      ok(diat.includes((rc + 5) % 12), `${tag}: resolves to a pad`);
+    }
+    for (const v of VOICINGS) {
+      const m = run(`chordToMidis(getSpiceChords()[${i}], ${JSON.stringify(v)}, 3)`);
+      ok(m.length >= 2 && m.length <= 7 && new Set(m).size === m.length, `${tag} ${v}: ${m}`);
+      const b = run(`bassMidi(getSpiceChords()[${i}], ${JSON.stringify(m)})`);
+      ok(b < Math.min(...m) && (b - rc) % 12 === 0, `${tag} ${v}: bass ${b}`);
+    }
+  });
+}
+console.log(`${ns} spice chords checked`);
+
 // ── UI wiring: pads + picker use the current ext ──
 run(`S.key='C'; S.mode='dorian'; S.ext=9; buildChords();`);
-const pads = els.chordGrid.children;
-ok(pads.length === 7, `7 pads built, got ${pads.length}`);
+const cells = els.chordGrid.children;
+ok(cells.length === 12, `4×3 grid = 12 cells, got ${cells.length}`);
+ok(cells[7].className === 'cp-gap' && cells[11].className === 'cp-gap', 'cells 8 and 12 are empty');
+ok(cells.slice(8, 11).every(c => /spice/.test(c.className)), 'row 3 = spice pads');
+ok(/G7/.test(cells[8].innerHTML) && /Abmaj9/.test(cells[9].innerHTML) && /Db9/.test(cells[10].innerHTML), 'dorian @9 spice row = G7 Abmaj9 Db9');
+const pads = cells;
 ok(/Cm9/.test(pads[0].innerHTML), 'pad I shows Cm9 at ext 9');
 ok(/1 b3 5 b7 9/.test(pads[0].innerHTML), 'pad I subtitle shows tones');
 run(`openPicker('chord', 3);`);
 const picks = els.pickerGrid.children;
 ok(picks[0].textContent === 'Cm9', `picker shows Cm9, got ${picks[0].textContent}`);
+ok(picks.length === 11 && picks[10].textContent === 'Db9' && /spice/.test(picks[8].className), `picker: 7 + gap + 3 spice, got ${picks.map(x => x.textContent).join(',')}`);
 
 // ── SEQ keeps what was assigned when ext changes later ──
 run(`assignChord(getDiatonicChords()[0]); S.ext = 13; buildChords();`);

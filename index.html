@@ -136,11 +136,13 @@ input[type=range]::-webkit-slider-thumb {
 /* ── CHORD PADS ── */
 .chord-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);   /* 4×3: I–VII + gap · 3 spice + gap */
+  grid-template-rows: repeat(3, 1fr);
   gap: 6px;
   flex: 1;
   min-height: 0;
 }
+.cp-gap { pointer-events: none; }
 .cp {
   background: var(--surface);
   border: 1px solid var(--border2);
@@ -166,9 +168,13 @@ input[type=range]::-webkit-slider-thumb {
 .cp.lit::after { opacity: 1; }
 .cp.pressing { transform: scale(0.95); }
 .cp .roman { font-size: 8px; color: var(--muted); letter-spacing: 1px; }
-.cp .cname { font-size: 15px; font-weight: bold; color: var(--text); }
+.cp .cname { font-size: 13px; font-weight: bold; color: var(--text); text-align: center; overflow-wrap: anywhere; padding: 0 3px; }
 .cp.lit .cname { color: var(--amber); }
-.cp .cqual { font-size: 9px; color: var(--muted); }
+.cp .cqual { font-size: 9px; color: var(--muted); text-align: center; padding: 0 3px; }
+/* out-of-key row */
+.cp.spice { background: #16121f; border-color: #3a2a5a; }
+.cp.spice .roman { color: #7a64a8; }
+.pb.spice { background: #16121f; border-color: #3a2a5a; }
 
 /* ── MELODY GRID ── */
 .mel-grid {
@@ -828,6 +834,44 @@ function getDiatonicChords() {
   return notes.map((_, deg) => buildScaleChord(notes, deg, S.ext));
 }
 
+// ── Out-of-key ("spice") chords: 3 per mode, purple row ──
+// iv = interval from the key root · scale = the chord's own scale, which decides
+// its tensions under the same rules as diatonic chords (so ext 9/11/13 still works):
+//   secondary dominant → phrygian dominant (its b9/b13 are skipped → stays a plain 7)
+//   tritone sub → lydian dominant (9, #11, 13) · borrowed m7 → dorian · borrowed maj7 → lydian
+const SPICE_MAJOR = [
+  { label: 'V7/vi', iv: '3M', scale: 'phrygian dominant' },   // E7 → Am7
+  { label: 'iv',    iv: '4P', scale: 'dorian' },              // Fm7 (borrowed from minor)
+  { label: 'subV',  iv: '2m', scale: 'lydian dominant' },     // Db7 → C
+];
+const SPICE_MINOR_V = { label: 'V7', iv: '5P', scale: 'phrygian dominant' };   // G7 → Cm7
+const SUBV = SPICE_MAJOR[2];
+const SPICE = {
+  'ionian':          SPICE_MAJOR,
+  'lydian':          SPICE_MAJOR,
+  'mixolydian':      SPICE_MAJOR,
+  'lydian dominant': SPICE_MAJOR,
+  'dorian':          [SPICE_MINOR_V, { label: 'bVI', iv: '6m', scale: 'lydian' }, SUBV],       // Abmaj7
+  'dorian b2':       [SPICE_MINOR_V, { label: 'bVI', iv: '6m', scale: 'lydian' }, SUBV],
+  'aeolian':         [SPICE_MINOR_V, { label: 'IV7', iv: '4P', scale: 'mixolydian' }, SUBV],   // F7
+  'phrygian':        [SPICE_MINOR_V, { label: 'IV7', iv: '4P', scale: 'mixolydian' }, SUBV],
+  'melodic minor':   [{ label: 'V7/ii', iv: '6M', scale: 'phrygian dominant' },                // A7 → Dm7
+                      { label: 'bVI', iv: '6m', scale: 'lydian' }, SUBV],
+};
+
+function getSpiceChords() {
+  return (SPICE[S.mode] || SPICE_MAJOR).map(sp => {
+    let root = Tonal.transpose(S.key, sp.iv);
+    // double-flat/sharp roots (Abb in Gb) can't carry a Tonal scale — build on the
+    // enharmonic, then keep the theory spelling for the name
+    let notes = Tonal.Scale.get(`${root} ${sp.scale}`).notes;
+    if (notes.length !== 7) notes = Tonal.Scale.get(`${Tonal.Note.simplify(root)} ${sp.scale}`).notes;
+    const ch = buildScaleChord(notes, 0, S.ext);
+    if (notes[0] !== root) ch.chordName = root + ch.quality;
+    return { ...ch, root, roman: sp.label, spice: true };
+  });
+}
+
 // ch = chord from buildScaleChord (needs .root + .ivs)
 function chordToMidis(ch, voicing, octBase=3) {
   // root by pitch class, so Cb sits with B and B# with C (Tonal's "Cb2" is B1 — an octave low)
@@ -886,10 +930,11 @@ function strum(midis, idPfx) {
 function buildChords() {
   const grid = document.getElementById('chordGrid');
   grid.innerHTML = '';
-  const chords = getDiatonicChords();
+  const chords = [...getDiatonicChords(), null, ...getSpiceChords(), null];   // null = empty cell
   chords.forEach((ch, idx) => {
+    if (!ch) { const g = document.createElement('div'); g.className = 'cp-gap'; grid.appendChild(g); return; }
     const pad = document.createElement('div');
-    pad.className = 'cp';
+    pad.className = 'cp' + (ch.spice ? ' spice' : '');
     pad.innerHTML = `
       <div class="roman">${ch.roman}</div>
       <div class="cname">${ch.chordName}</div>
@@ -1159,12 +1204,13 @@ function openPicker(track, idx) {
   pickStep = idx; pickTrack = track;
 
   if (track === 'chord') {
-    const chords = getDiatonicChords();
+    const chords = [...getDiatonicChords(), null, ...getSpiceChords()];   // same rows as the pads
     const pg = document.getElementById('pickerGrid');
     pg.innerHTML = '';
     chords.forEach(ch => {
+      if (!ch) { pg.appendChild(document.createElement('span')); return; }
       const b = document.createElement('button');
-      b.className = 'pb'; b.textContent = ch.chordName;
+      b.className = 'pb' + (ch.spice ? ' spice' : ''); b.textContent = ch.chordName;
       b.onclick = () => assignChord(ch);
       pg.appendChild(b);
     });

@@ -47,11 +47,14 @@
 - MIDI 4 track parse ผ่าน, note on/off จับคู่ครบ
 - session v1 → v2 migrate ไม่พัง
 
-## Phase 2 — คำศัพท์คอร์ด ⬅ ถัดไป (รอผู้ใช้สั่ง — ห้ามเริ่มเอง)
+## Phase 2 — คำศัพท์คอร์ด ✅ build + เทสต์แล้ว (รอผู้ใช้เล่นบน Android — ผู้ใช้: "ทำใช้ก่อนค่อยแก้")
+- ทำแล้ว: ตาราง `SPICE` (ต่อ mode) + `getSpiceChords()` · pad แถว 3 สีม่วง · picker ใน SEQ แถวเดียวกัน · `test/chords_test.js` เช็ค 1512 คอร์ด (นอกคีย์จริง, ★1 ไปจบที่ pad, ★3 รากสูงกว่า key ครึ่งเสียง)
+- tension ของคอร์ดนอกคีย์มาจาก scale ของคอร์ดเอง กติกาเดียวกับ 1a: V7/vi, V7, V7/ii → phrygian dominant (b9/b13 ถูกข้าม → **เป็น 7 เสมอทุก ext** ถูกตามทฤษฎี) · subV → lydian dominant (Db9, Db13#11) · iv m7 → dorian · bVI maj7 → lydian · IV7 → mixolydian
+- ชื่อดับเบิลแฟลตของ subV ในบาง key (Gb → `Abb7`, Db → `Ebb7`) ปล่อยไว้ตามที่ผู้ใช้สั่ง · scale สร้างบนตัว enharmonic แล้วคืนชื่อเดิม
 - **ตัดสินแล้ว (30 ก.ย.):** layout CHORD เป็น **4 คอลัมน์ × 3 แถว** — แถว 1–2 = diatonic I–VII (+1 ว่าง) · แถว 3 = คอร์ดนอกคีย์ 3 ตัว สีม่วงแยก (+1 ว่าง) · ผู้ใช้ชอบ 4×4 แต่จะว่างทั้งแถว เลยเลือก 4×3 ก่อน ขยายทีหลังได้
   - pad กว้าง 86px: ชื่อ 15px ล้น ~8% → ต้องลดชื่อเหลือ 13px + ให้ขึ้นบรรทัดได้ (วัดใน Chromium แล้ว)
 - **ผู้ใช้สั่ง: อะไรที่ถูกตามทฤษฎีไม่ต้องแก้ถ้ายังไม่เป็นปัญหา** เช่นชื่อดับเบิลแฟลต (`Bbbmaj13#11`, `Fbmaj9#11` ในบาง key/mode) — ปล่อยไว้
-- ค้าง: คอร์ดแถวม่วงต่อ mode (เสนอผู้ใช้แล้ว รอตอบ) — major-tonic: E7→Am7 · Fm7 · Db7 / dorian, dorian b2: G7→Cm7 · Abmaj7 · Db7 / aeolian, phrygian: G7→Cm7 · F7 · Db7 / melodic minor: A7→Dm7 · Abmaj7 · Db7 (key C)
+- ตกลงแล้ว (ผู้ใช้: ใช้ตามนี้ก่อน ค่อยแก้): major-tonic: E7→Am7 · Fm7 · Db7 / dorian, dorian b2: G7→Cm7 · Abmaj7 · Db7 / aeolian, phrygian: G7→Cm7 · F7 · Db7 / melodic minor: A7→Dm7 · Abmaj7 · Db7 (key C)
 - pad 8–9 สำหรับคอร์ดนอกคีย์: V7/vi, iv ยืมจาก minor, tritone sub
 - ห้ามเริ่มเองจนกว่าผู้ใช้สั่ง
 

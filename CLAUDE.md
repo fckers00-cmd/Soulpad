@@ -48,7 +48,9 @@ let drumSeq  = { kick: bool[32], snare: bool[32], hat: bool[32] }
 
 **Chords:** `buildScaleChord(notes, deg, ext)` สร้างคอร์ดจาก scale เป็น `ivs` (semitone เหนือ root) + ตั้งชื่อเอง (ไม่ใช้ Tonal.Chord.detect/get แล้ว) · `chordToMidis(ch, voicing, oct)` รับ object คอร์ด ไม่ใช่ชื่อ · กติกา extension ดู PLAN.md 1a
 
-**Tabs:** CHORD (7 diatonic pads, ext 7/9/11/13, voicing close/drop2/spread/shell/rootless, Touch/Latch, strum, octave) · MELODY (6×4 fourths grid) · SEQ (32 step, CALL/RESPOND page, note length ×1/×2/×4 แบบ TB-303 tie, resolution 1/4·1/8·1/16, swing, drums, CLR two-tap, MIDI export)
+**Out-of-key:** ตาราง `SPICE[mode]` = 3 คอร์ด `{label, iv (จาก key), scale (ของคอร์ดเอง → tension)}` · `getSpiceChords()` คืน chord object แบบเดียวกับ diatonic + `spice: true` · แก้คอร์ดแถวม่วง = แก้ตารางนี้ที่เดียว
+
+**Tabs:** CHORD (grid 4×3: I–VII + ช่องว่าง / 3 คอร์ดนอกคีย์สีม่วง + ช่องว่าง, ext 7/9/11/13, voicing close/drop2/spread/shell/rootless, Touch/Latch, strum, octave) · MELODY (6×4 fourths grid) · SEQ (32 step, CALL/RESPOND page, note length ×1/×2/×4 แบบ TB-303 tie, resolution 1/4·1/8·1/16, swing, drums, CLR two-tap, MIDI export)
 
 **Modes (9):** dorian, aeolian, melodic minor, ionian, lydian, lydian dominant, mixolydian, phrygian, dorian b2
 
